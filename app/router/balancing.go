@@ -10,6 +10,7 @@ import (
 	"github.com/xtls/xray-core/core"
 	"github.com/xtls/xray-core/features/extension"
 	"github.com/xtls/xray-core/features/outbound"
+	"github.com/xtls/xray-core/features/routing"
 )
 
 type BalancingStrategy interface {
@@ -91,8 +92,13 @@ type Balancer struct {
 	override override
 }
 
+// ContextBalancingStrategy is a strategy that picks by the connection.
+type ContextBalancingStrategy interface {
+	PickOutboundFor(ctx routing.Context, candidates []string) string
+}
+
 // PickOutbound picks the tag of a outbound
-func (b *Balancer) PickOutbound() (string, error) {
+func (b *Balancer) PickOutbound(ctx routing.Context) (string, error) {
 	candidates, err := b.SelectOutbounds()
 	if err != nil {
 		if b.fallbackTag != "" {
@@ -104,6 +110,8 @@ func (b *Balancer) PickOutbound() (string, error) {
 	var tag string
 	if o := b.override.Get(); o != "" {
 		tag = o
+	} else if s, ok := b.strategy.(ContextBalancingStrategy); ok {
+		tag = s.PickOutboundFor(ctx, candidates)
 	} else {
 		tag = b.strategy.PickOutbound(candidates)
 	}

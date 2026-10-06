@@ -38,7 +38,7 @@ func (r *BalancingRule) Build() (*router.BalancingRule, error) {
 	switch r.Strategy.Type {
 	case "":
 		r.Strategy.Type = strategyRandom
-	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin:
+	case strategyRandom, strategyLeastLoad, strategyLeastPing, strategyRoundRobin, strategyConsistentHashing:
 	default:
 		return nil, errors.New("unknown balancing strategy: " + r.Strategy.Type)
 	}
@@ -57,6 +57,10 @@ func (r *BalancingRule) Build() (*router.BalancingRule, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+	// consistentHashing without settings needs no observatory.
+	if r.Strategy.Type == strategyConsistentHashing && r.Strategy.Settings == nil {
+		ts = nil
 	}
 
 	return &router.BalancingRule{

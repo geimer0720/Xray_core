@@ -274,3 +274,51 @@ func TestIPIfNonMatchIP(t *testing.T) {
 		t.Error("expect tag 'test', bug actually ", tag)
 	}
 }
+
+func TestConsistentHashingBalancerRoute(t *testing.T) {
+	config := &Config{
+		Rule: []*RoutingRule{
+			{
+				TargetTag: &RoutingRule_BalancingTag{BalancingTag: "balance"},
+				Networks:  []net.Network{net.Network_TCP},
+			},
+		},
+		BalancingRule: []*BalancingRule{
+			{
+				Tag:              "balance",
+				OutboundSelector: []string{"proxy-"},
+				Strategy:         "consistenthashing",
+			},
+		},
+	}
+
+	mockCtl := gomock.NewController(t)
+	defer mockCtl.Finish()
+
+	mockDNS := mocks.NewDNSClient(mockCtl)
+	mockOhm := mocks.NewOutboundManager(mockCtl)
+	mockHs := mocks.NewOutboundHandlerSelector(mockCtl)
+	mockHs.EXPECT().Select(gomock.Eq([]string{"proxy-"})).
+		Return([]string{"proxy-a", "proxy-b", "proxy-c", "proxy-d"}).AnyTimes()
+
+	r := new(Router)
+	common.Must(r.Init(context.TODO(), config, mockDNS, &mockOutboundManager{
+		Manager:         mockOhm,
+		HandlerSelector: mockHs,
+	}, nil))
+
+	pick := func(host string) string {
+		ctx := session.ContextWithOutbounds(context.Background(), []*session.Outbound{{
+			Target: net.TCPDestination(net.DomainAddress(host), 443),
+		}})
+		route, err := r.PickRoute(routing_session.AsRoutingContext(ctx))
+		common.Must(err)
+		return route.GetOutboundTag()
+	}
+	want := pick("www.youtube.com")
+	for _, host := range []string{"m.youtube.com", "youtube.com", "www.youtube.com"} {
+		if got := pick(host); got != want {
+			t.Fatalf("%s went to %s, www.youtube.com to %s", host, got, want)
+		}
+	}
+}

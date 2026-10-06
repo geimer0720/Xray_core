@@ -18,9 +18,9 @@ type Rule struct {
 	Webhook   *WebhookNotifier
 }
 
-func (r *Rule) GetTag() (string, error) {
+func (r *Rule) GetTag(ctx routing.Context) (string, error) {
 	if r.Balancer != nil {
-		return r.Balancer.PickOutbound()
+		return r.Balancer.PickOutbound(ctx)
 	}
 	return r.Tag, nil
 }
@@ -153,6 +153,25 @@ func (br *BalancingRule) Build(ohm outbound.Manager, dispatcher routing.Dispatch
 			ohm:         ohm,
 			fallbackTag: br.FallbackTag,
 			strategy:    leastLoadStrategy,
+		}, nil
+	case "consistenthashing":
+		var settings *StrategyLeastLoadConfig
+		if br.StrategySettings != nil {
+			i, err := br.StrategySettings.GetInstance()
+			if err != nil {
+				return nil, err
+			}
+			s, ok := i.(*StrategyLeastLoadConfig)
+			if !ok {
+				return nil, errors.New("not a StrategyLeastLoadConfig")
+			}
+			settings = s
+		}
+		return &Balancer{
+			selectors:   br.OutboundSelector,
+			ohm:         ohm,
+			fallbackTag: br.FallbackTag,
+			strategy:    NewConsistentHashingStrategy(br.FallbackTag, settings),
 		}, nil
 	case "random":
 		fallthrough
